@@ -6,6 +6,10 @@ import '../fertilizer_search/fertilizer_search_screen.dart';
 import '../advisory/presentation/screens/advisory_screen.dart';
 import '../profile/farmer_profile_screen.dart';
 import '../profile/profile_controller.dart';
+import '../../../../core/controllers/ai_assistant_controller.dart';
+import '../../../../core/services/intent_service.dart';
+import '../../../../core/widgets/ai_floating_button.dart';
+import '../soil_health/soil_health_check_screen.dart';
 
 /// Farmer Dashboard Screen
 /// Main container for farmer module with persistent bottom navigation
@@ -35,25 +39,63 @@ class _FarmerDashboardScreenState extends State<FarmerDashboardScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _playStartupGreeting());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _setupAiAssistantNavigation();
+  }
+
+  void _playStartupGreeting() {
+    if (!mounted) return;
+    context.read<AiAssistantController>().playStartupGreeting(
+          startListeningAfter: true,
+        );
+  }
+
+  void _setupAiAssistantNavigation() {
+    final controller = context.read<AiAssistantController>();
+    controller.onNavigate = (route, tabIndex) {
+      if (!mounted) return;
+      if (tabIndex != null) {
+        _onNavigateToTab(tabIndex);
+      }
+      if (route != null && route.isNotEmpty) {
+        if (route == IntentService.soilHealthRoute) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const SoilHealthCheckScreen(),
+            ),
+          );
+        } else {
+          Navigator.of(context).pushNamed(route);
+        }
+      }
+    };
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: ChangeNotifierProvider(
         create: (_) => ProfileController()..initialize(),
-        child: IndexedStack(
-          index: _selectedIndex,
+        child: Stack(
           children: [
-            // Index 0: Home
-            FarmerHomeScreen(onNavigateToTab: _onNavigateToTab),
-
-            // Index 1: Fertilizer Search
-            const FertilizerSearchScreen(),
-
-            // Index 2: Advisory
-            const AdvisoryScreen(),
-
-            // Index 3: Profile
-            // ProfileController is now provided above, so we just use the screen
-            FarmerProfileScreen(onNavigateToTab: _onNavigateToTab),
+            IndexedStack(
+              index: _selectedIndex,
+              children: [
+                FarmerHomeScreen(onNavigateToTab: _onNavigateToTab),
+                const FertilizerSearchScreen(),
+                const AdvisoryScreen(),
+                FarmerProfileScreen(onNavigateToTab: _onNavigateToTab),
+              ],
+            ),
+            const AiFloatingButton(bottom: 80, right: 16),
           ],
         ),
       ),
