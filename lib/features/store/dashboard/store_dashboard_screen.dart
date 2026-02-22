@@ -74,33 +74,41 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
       ),
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildNavItem(
-                icon: Icons.dashboard_outlined,
-                label: AppLocalizations.of(context).dashboard.toUpperCase(),
-                index: 0,
-                isSelected: _selectedIndex == 0,
+              Expanded(
+                child: _buildNavItem(
+                  icon: Icons.dashboard_outlined,
+                  label: AppLocalizations.of(context).dashboard.toUpperCase(),
+                  index: 0,
+                  isSelected: _selectedIndex == 0,
+                ),
               ),
-              _buildNavItem(
-                icon: Icons.inventory_2,
-                label: AppLocalizations.of(context).stock.toUpperCase(),
-                index: 1,
-                isSelected: _selectedIndex == 1,
+              Expanded(
+                child: _buildNavItem(
+                  icon: Icons.inventory_2,
+                  label: AppLocalizations.of(context).stock.toUpperCase(),
+                  index: 1,
+                  isSelected: _selectedIndex == 1,
+                ),
               ),
-              _buildNavItem(
-                icon: Icons.location_on_outlined,
-                label: AppLocalizations.of(context).storeLocation.toUpperCase(),
-                index: 2,
-                isSelected: _selectedIndex == 2,
+              Expanded(
+                child: _buildNavItem(
+                  icon: Icons.location_on_outlined,
+                  label: AppLocalizations.of(context).storeLocation.toUpperCase(),
+                  index: 2,
+                  isSelected: _selectedIndex == 2,
+                ),
               ),
-              _buildNavItem(
-                icon: Icons.person_outline,
-                label: AppLocalizations.of(context).profile.toUpperCase(),
-                index: 3,
-                isSelected: _selectedIndex == 3,
+              Expanded(
+                child: _buildNavItem(
+                  icon: Icons.person_outline,
+                  label: AppLocalizations.of(context).profile.toUpperCase(),
+                  index: 3,
+                  isSelected: _selectedIndex == 3,
+                ),
               ),
             ],
           ),
@@ -118,12 +126,12 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
   }) {
     return InkWell(
       onTap: () => _onBottomNavTap(index),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
         decoration: BoxDecoration(
           color: isSelected ? const Color(0xFFE8F5E9) : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -131,14 +139,17 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
             Icon(
               icon,
               color: isSelected ? const Color(0xFF2E7D32) : Colors.grey,
-              size: 24,
+              size: 20,
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 10,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                fontSize: 8,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 color: isSelected ? const Color(0xFF2E7D32) : Colors.grey,
               ),
             ),
