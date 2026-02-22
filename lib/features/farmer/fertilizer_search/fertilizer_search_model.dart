@@ -74,7 +74,8 @@ class Fertilizer {
       suitableCrops: data['suitable_crops']?.toString() ?? 'All Crops',
       recommendedDosage:
           data['recommended_dosage']?.toString() ?? 'As per soil test',
-      manufacturer: data['manufacturer']?.toString() ?? data['brand']?.toString() ?? '',
+      manufacturer:
+          data['manufacturer']?.toString() ?? data['brand']?.toString() ?? '',
     );
   }
 }
@@ -152,18 +153,22 @@ class Store {
     }
 
     // Get store name - use storeName (primary), fallback to others
-    String storeName = data['storeName']?.toString() ??
-                      data['shop_name']?.toString() ??
-                      data['store_name']?.toString() ??
-                      data['name']?.toString() ??
-                      '';
+    String storeName =
+        data['storeName']?.toString() ??
+        data['shop_name']?.toString() ??
+        data['store_name']?.toString() ??
+        data['name']?.toString() ??
+        '';
 
     // Get verification status - isVerified is the standard field
-    bool isVerified = data['isVerified'] == true ||
-                     data['is_verified'] == true ||
-                     data['verified'] == true;
+    bool isVerified =
+        data['isVerified'] == true ||
+        data['is_verified'] == true ||
+        data['verified'] == true;
 
-    print('DEBUG: Store $id - Name: $storeName, Location: ($lat, $lng), Verified: $isVerified');
+    print(
+      'DEBUG: Store $id - Name: $storeName, Location: ($lat, $lng), Verified: $isVerified',
+    );
 
     return Store(
       id: id,
@@ -183,14 +188,14 @@ class StoreSearchResult {
   final Store store;
   final double distance;
   final double score;
-  final double price; // Price of the selected fertilizer
+  final double? price; // null means price not available
   final bool inStock;
 
   StoreSearchResult({
     required this.store,
     required this.distance,
     required this.score,
-    required this.price,
+    this.price, // nullable
     required this.inStock,
   });
 }

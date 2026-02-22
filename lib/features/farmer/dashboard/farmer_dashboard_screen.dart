@@ -7,6 +7,7 @@ import '../advisory/presentation/screens/advisory_screen.dart';
 import '../profile/farmer_profile_screen.dart';
 import '../profile/profile_controller.dart';
 import '../../../../core/controllers/ai_assistant_controller.dart';
+import '../../../../core/localization/locale_provider.dart';
 import '../../../../core/services/intent_service.dart';
 import '../../../../core/widgets/ai_floating_button.dart';
 import '../soil_health/soil_health_check_screen.dart';
@@ -41,42 +42,61 @@ class _FarmerDashboardScreenState extends State<FarmerDashboardScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _playStartupGreeting());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        // Do not auto-open AI assistant; keep it manual via floating button.
+        _setupAiAssistantNavigation();
+      }
+    });
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _setupAiAssistantNavigation();
+    // Provider setup is now done in initState with addPostFrameCallback
   }
 
   void _playStartupGreeting() {
     if (!mounted) return;
-    context.read<AiAssistantController>().playStartupGreeting(
-          startListeningAfter: true,
-        );
+    try {
+      final localeProvider = Provider.of<LocaleProvider>(context, listen: false);
+      final aiController = Provider.of<AiAssistantController>(context, listen: false);
+      aiController.playStartupGreeting(
+        startListeningAfter: true,
+        languageCode: localeProvider.currentLanguageCode,
+      );
+    } catch (e) {
+      print('Error playing startup greeting: $e');
+      // Continue without AI assistant if provider is not available
+    }
   }
 
   void _setupAiAssistantNavigation() {
-    final controller = context.read<AiAssistantController>();
-    controller.onNavigate = (route, tabIndex) {
-      if (!mounted) return;
-      if (tabIndex != null) {
-        _onNavigateToTab(tabIndex);
-      }
-      if (route != null && route.isNotEmpty) {
-        if (route == IntentService.soilHealthRoute) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const SoilHealthCheckScreen(),
-            ),
-          );
-        } else {
-          Navigator.of(context).pushNamed(route);
+    if (!mounted) return;
+    try {
+      final controller = Provider.of<AiAssistantController>(context, listen: false);
+      controller.onNavigate = (route, tabIndex) {
+        if (!mounted) return;
+        if (tabIndex != null) {
+          _onNavigateToTab(tabIndex);
         }
-      }
-    };
+        if (route != null && route.isNotEmpty) {
+          if (route == IntentService.soilHealthRoute) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const SoilHealthCheckScreen(),
+              ),
+            );
+          } else {
+            Navigator.of(context).pushNamed(route);
+          }
+        }
+      };
+    } catch (e) {
+      print('Error setting up AI assistant navigation: $e');
+      // Continue without AI assistant if provider is not available
+    }
   }
 
   @override
@@ -90,7 +110,7 @@ class _FarmerDashboardScreenState extends State<FarmerDashboardScreen> {
               index: _selectedIndex,
               children: [
                 FarmerHomeScreen(onNavigateToTab: _onNavigateToTab),
-                const FertilizerSearchScreen(),
+                FertilizerSearchScreen(onNavigateToTab: _onNavigateToTab),
                 const AdvisoryScreen(),
                 FarmerProfileScreen(onNavigateToTab: _onNavigateToTab),
               ],

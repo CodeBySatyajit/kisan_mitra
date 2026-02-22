@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import '../services/ai_service.dart';
 import '../services/voice_service.dart';
-import '../services/intent_service.dart';
+
+/// Represents a single chat message for the UI.
+class ChatMessage {
+  final String text;
+  final bool isUser;
+
+  const ChatMessage({required this.text, required this.isUser});
+}
 
 /// AI Assistant state.
-enum AiAssistantState {
-  idle,
-  listening,
-  processing,
-  speaking,
-  error,
-}
+enum AiAssistantState { idle, listening, processing, speaking, error }
 
 /// Controller for AI Voice Assistant.
 /// Manages voice, AI, intent services and notifies listeners.
@@ -23,24 +24,35 @@ class AiAssistantController extends ChangeNotifier {
 
   final VoiceService _voiceService = VoiceService();
   final AiService _aiService = AiService();
-  final IntentService _intentService = IntentService();
 
   AiAssistantState _state = AiAssistantState.idle;
-  String _transcript = '';
-  String _lastResponse = '';
+  final List<ChatMessage> _messages = [];
+  String _currentTranscript = '';
   String? _errorMessage;
   bool _startupGreetingPlayed = false;
   bool _isPanelOpen = false;
 
+  // Current language defaults to English
+  String _currentLanguageCode = 'en';
+
   AiAssistantState get state => _state;
-  String get transcript => _transcript;
-  String get lastResponse => _lastResponse;
+  List<ChatMessage> get messages => _messages;
+  String get transcript => _currentTranscript;
   String? get errorMessage => _errorMessage;
   bool get startupGreetingPlayed => _startupGreetingPlayed;
   bool get isListening => _voiceService.isListening;
   bool get isExpanded => _isPanelOpen || _state != AiAssistantState.idle;
 
-  List<String> get suggestionPrompts => _intentService.getSuggestionPrompts();
+  // Simple hardcoded suggestions for now, AI handles routing.
+  List<String> get suggestionPrompts => [
+    'Search for fertilizers',
+    'Go to advisory',
+    'What is the weather?',
+    'Suggest crops for my location',
+    'Which fertilizer for wheat?',
+    'Open soil health check',
+    'Emergency help',
+  ];
 
   /// Callback when navigation is requested (route or tab index).
   void Function(String? route, int? tabIndex)? onNavigate;
@@ -49,8 +61,13 @@ class AiAssistantController extends ChangeNotifier {
   void Function(Map<String, String> formData)? onFormFill;
 
   void _onTranscript(String text, bool isFinal) {
-    _transcript = text;
+    // Ignore transcripts if we are currently speaking (avoids echo)
+    if (_state == AiAssistantState.speaking) return;
+
+    _currentTranscript = text;
     if (isFinal && text.isNotEmpty) {
+      _messages.add(ChatMessage(text: text, isUser: true));
+      _currentTranscript = '';
       _processUserInput(text);
     }
     notifyListeners();
@@ -73,49 +90,97 @@ class AiAssistantController extends ChangeNotifier {
   Future<void> _processUserInput(String text) async {
     if (text.isEmpty) return;
 
-    final stripped = _intentService.stripWakeWord(text);
-    final effectiveText = stripped.isEmpty ? text : stripped;
+    // Wake word stripping is handled inside AI context now or
+    // we can optionally keep it. We'll strip manually.
+    final lower = text.trim().toLowerCase();
+    var effectiveText = text;
+    if (lower.startsWith('hey kisan mitra '))
+      effectiveText = text.substring(16).trim();
+    else if (lower.startsWith('hey kisan '))
+      effectiveText = text.substring(10).trim();
+    else if (lower.startsWith('kisan '))
+      effectiveText = text.substring(6).trim();
 
     _state = AiAssistantState.processing;
     _errorMessage = null;
     notifyListeners();
 
-    final intent = _intentService.recognizeIntent(effectiveText);
-    final response = await _aiService.chat(effectiveText, intent: intent);
-
-    _lastResponse = response.text;
-
-    if (response.intent != null && response.intent!.hasNavigation) {
-      onNavigate?.call(
-        response.intent!.route,
-        response.intent!.tabIndex,
+    try {
+      final response = await _aiService.chat(
+        effectiveText,
+        languageCode: _currentLanguageCode,
       );
+
+      if (response.text.isNotEmpty) {
+        _messages.add(ChatMessage(text: response.text, isUser: false));
+      } else {
+        _messages.add(
+          ChatMessage(
+            text:
+                'I apologize, but I am unable to connect to my brain right now. Please check your internet or API key.',
+            isUser: false,
+          ),
+        );
+      }
+
+      // Route based on new JSON intent
+      if (response.success && response.parsedIntent != null) {
+        _routeIntent(response.parsedIntent!, response.entities);
+      }
+
+      _state = AiAssistantState.speaking;
+      notifyListeners();
+
+      final ttsLocale = _getTtsLocaleId(_currentLanguageCode);
+      if (response.text.isNotEmpty) {
+        await _voiceService.speak(response.text, language: ttsLocale);
+      }
+    } catch (e) {
+      print('AI Assistant Error: $e');
+      String userFriendlyMessage =
+          'I encountered an error. Please check your connection and try again.';
+
+      if (e.toString().contains('NotInitializedError')) {
+        userFriendlyMessage =
+            'The AI system is still loading. Please wait a moment or restart the app.';
+      } else if (e.toString().contains('TimeoutException')) {
+        userFriendlyMessage =
+            'The AI is taking too long to think. Please check your internet connection.';
+      }
+
+      _messages.add(
+        ChatMessage(
+          text: '$userFriendlyMessage\n(Error detail: $e)',
+          isUser: false,
+        ),
+      );
+      _state = AiAssistantState.error;
+    } finally {
+      if (_voiceService.isListening) {
+        _state = AiAssistantState.listening;
+      } else if (_state != AiAssistantState.error) {
+        _state = AiAssistantState.idle;
+      }
+      _currentTranscript = '';
+      notifyListeners();
     }
-
-    if (response.intent?.formData != null) {
-      onFormFill?.call(response.intent!.formData!);
-    }
-
-    _state = AiAssistantState.speaking;
-    notifyListeners();
-
-    await _voiceService.speak(response.text);
-
-    if (_voiceService.isListening) {
-      _state = AiAssistantState.listening;
-    } else {
-      _state = AiAssistantState.idle;
-    }
-    _transcript = '';
-    notifyListeners();
   }
 
   /// Start listening.
-  Future<void> startListening() async {
+  Future<void> startListening({String? languageCode}) async {
+    if (_state == AiAssistantState.listening ||
+        _state == AiAssistantState.processing)
+      return;
+
+    if (languageCode != null) _currentLanguageCode = languageCode;
     _isPanelOpen = true;
     _errorMessage = null;
-    _transcript = '';
-    await _voiceService.startListening();
+    _currentTranscript = '';
+
+    // Convert short language code to STT locale ID
+    final localeId = _getSpeechLocaleId(_currentLanguageCode);
+
+    await _voiceService.startListening(localeId: localeId);
     notifyListeners();
   }
 
@@ -127,17 +192,45 @@ class AiAssistantController extends ChangeNotifier {
   }
 
   /// Toggle listen (start if idle, stop if listening).
-  Future<void> toggleListening() async {
+  Future<void> toggleListening({String? languageCode}) async {
     if (_voiceService.isListening) {
       await stopListening();
     } else {
-      await startListening();
+      await startListening(languageCode: languageCode);
+    }
+  }
+
+  void _routeIntent(String intent, Map<String, dynamic>? entities) {
+    switch (intent) {
+      case 'navigate_dashboard':
+        onNavigate?.call(null, 0); // home tab
+        break;
+      case 'search_fertilizer':
+        onNavigate?.call(null, 1); // search tab
+        if (entities != null && entities.containsKey('fertilizer')) {
+          onFormFill?.call({'searchQuery': entities['fertilizer'].toString()});
+        }
+        break;
+      case 'open_advisory':
+        onNavigate?.call(null, 2); // advisory tab
+        break;
+      case 'show_nearby_store':
+        onNavigate?.call(null, 1); // map/search tab
+        // Might pass specialized query to search field via form fill
+        break;
+      default:
+        // No action needed for just 'chat'
+        break;
     }
   }
 
   /// Play startup greeting and optionally start listening.
-  Future<void> playStartupGreeting({bool startListeningAfter = true}) async {
+  Future<void> playStartupGreeting({
+    bool startListeningAfter = true,
+    String? languageCode,
+  }) async {
     if (_startupGreetingPlayed) return;
+    if (languageCode != null) _currentLanguageCode = languageCode;
 
     _startupGreetingPlayed = true;
     _isPanelOpen = true;
@@ -145,7 +238,13 @@ class AiAssistantController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _voiceService.speak(_aiService.getStartupGreeting());
+      final ttsLocale = _getTtsLocaleId(_currentLanguageCode);
+      final greeting = _aiService.getStartupGreeting(
+        languageCode: _currentLanguageCode,
+      );
+      _messages.add(ChatMessage(text: greeting, isUser: false));
+
+      await _voiceService.speak(greeting, language: ttsLocale);
     } catch (e) {
       _errorMessage = 'Voice not available. Tap the mic to try again.';
       _state = AiAssistantState.idle;
@@ -158,7 +257,7 @@ class AiAssistantController extends ChangeNotifier {
       _errorMessage = null;
       notifyListeners();
       try {
-        await startListening();
+        await startListening(languageCode: _currentLanguageCode);
       } catch (_) {
         _state = AiAssistantState.idle;
         notifyListeners();
@@ -185,7 +284,7 @@ class AiAssistantController extends ChangeNotifier {
       stopListening();
     }
     _state = AiAssistantState.idle;
-    _transcript = '';
+    _currentTranscript = '';
     _errorMessage = null;
     notifyListeners();
   }
@@ -194,5 +293,31 @@ class AiAssistantController extends ChangeNotifier {
   void dispose() {
     _voiceService.dispose();
     super.dispose();
+  }
+
+  /// Map 2-letter lang code to SpeechToText localeId
+  String _getSpeechLocaleId(String langCode) {
+    switch (langCode) {
+      case 'hi':
+        return 'hi_IN';
+      case 'mr':
+        return 'mr_IN'; // or mr_IN depending on STT engine
+      case 'en':
+      default:
+        return 'en_IN';
+    }
+  }
+
+  /// Map 2-letter lang code to FlutterTts localeId
+  String _getTtsLocaleId(String langCode) {
+    switch (langCode) {
+      case 'hi':
+        return 'hi-IN';
+      case 'mr':
+        return 'mr-IN';
+      case 'en':
+      default:
+        return 'en-IN';
+    }
   }
 }

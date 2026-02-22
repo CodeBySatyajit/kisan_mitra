@@ -16,8 +16,9 @@ class RankingService {
     int maxReviews = 0;
 
     for (var result in results) {
-      if (result.price < minPrice && result.price > 0) {
-        minPrice = result.price;
+      final price = result.price;
+      if (price != null && price < minPrice && price > 0) {
+        minPrice = price;
       }
       if (result.store.totalReviews > maxReviews) {
         maxReviews = result.store.totalReviews;
@@ -39,10 +40,10 @@ class RankingService {
       }
 
       // 3. Price Score (0 to 1) - Lower is better
-      // score = lowest_price / current_price
       double priceScore = 0.0;
-      if (result.price > 0) {
-        priceScore = minPrice / result.price;
+      final price = result.price;
+      if (price != null && price > 0) {
+        priceScore = minPrice / price;
       }
 
       // 4. Distance Score (0 to 1) - Closer is better

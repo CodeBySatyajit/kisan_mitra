@@ -2,7 +2,9 @@ import 'dart:async';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../utils/permissions.dart';
+import 'eleven_labs_service.dart';
 
 /// Callbacks for voice service events.
 typedef OnTranscript = void Function(String text, bool isFinal);
@@ -10,6 +12,7 @@ typedef OnListeningState = void Function(bool isListening);
 typedef OnError = void Function(String message);
 
 /// Voice service handling Speech-to-Text and Text-to-Speech.
+/// Now upgraded to support ElevenLabs with FlutterTts fallback.
 class VoiceService {
   VoiceService() {
     _initTts();
@@ -17,6 +20,7 @@ class VoiceService {
 
   final SpeechToText _speech = SpeechToText();
   final FlutterTts _tts = FlutterTts();
+  final ElevenLabsService _elevenLabs = ElevenLabsService();
 
   bool _isListening = false;
   bool _isSpeaking = false;
@@ -28,7 +32,7 @@ class VoiceService {
   OnError? onError;
 
   bool get isListening => _isListening;
-  bool get isSpeaking => _isSpeaking;
+  bool get isSpeaking => _isSpeaking || _elevenLabs.isSpeaking;
 
   Future<void> _initTts() async {
     try {
@@ -128,7 +132,7 @@ class VoiceService {
     }
   }
 
-  /// Speak text using TTS.
+  /// Speak text using ElevenLabs (fallback to FlutterTts).
   Future<void> speak(
     String text, {
     String? language,
@@ -140,6 +144,39 @@ class VoiceService {
 
     await stopListening();
 
+    final elevenLabsKey = dotenv.env['ELEVEN_LABS_API_KEY'];
+    final canUseElevenLabs =
+        elevenLabsKey != null &&
+        elevenLabsKey.isNotEmpty &&
+        elevenLabsKey != 'your_key_here' &&
+        elevenLabsKey != 'sk_5008a5e7effbac2d93f903f6f58e6086d0f711c4d2ba674d'; // Check for placeholder
+
+    if (canUseElevenLabs) {
+      print('🎙️ Using ElevenLabs AI for voice synthesis');
+      try {
+        await _elevenLabs.synthesizeAndPlay(
+          text,
+          languageCode: language,
+        );
+      } catch (e) {
+        print('⚠️ ElevenLabs failed, falling back to system TTS: $e');
+        // Fallback to system TTS if ElevenLabs fails
+        await _speakWithSystemTts(text, language, volume, rate, pitch);
+      }
+    } else {
+      print('📢 Using system TTS (ElevenLabs not configured)');
+      await _speakWithSystemTts(text, language, volume, rate, pitch);
+    }
+  }
+
+  /// Internal method for system TTS
+  Future<void> _speakWithSystemTts(
+    String text,
+    String? language,
+    double volume,
+    double rate,
+    double pitch,
+  ) async {
     try {
       if (language != null) {
         await _tts.setLanguage(language);
@@ -156,9 +193,10 @@ class VoiceService {
     }
   }
 
-  /// Stop TTS.
+  /// Stop synthesis.
   Future<void> stopSpeaking() async {
     await _tts.stop();
+    await _elevenLabs.stop();
     _isSpeaking = false;
   }
 
@@ -182,5 +220,6 @@ class VoiceService {
     _silenceTimer?.cancel();
     stopListening();
     stopSpeaking();
+    _elevenLabs.dispose();
   }
 }

@@ -1594,6 +1594,12 @@ abstract class AppLocalizations {
   /// **'Nearby Stores'**
   String get nearbyStores;
 
+  /// No description provided for @findNearbyStoreSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Find nearby stores for best prices'**
+  String get findNearbyStoreSubtitle;
+
   /// No description provided for @searchFertilizer.
   ///
   /// In en, this message translates to:

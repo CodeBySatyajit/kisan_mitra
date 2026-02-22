@@ -2,16 +2,13 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../controllers/ai_assistant_controller.dart';
+import '../localization/locale_provider.dart';
 import '../utils/app_theme.dart';
 
 /// Global floating AI assistant button.
 /// Expands with animation, shows waveform when listening, displays transcript.
 class AiFloatingButton extends StatelessWidget {
-  const AiFloatingButton({
-    super.key,
-    this.bottom = 100,
-    this.right = 20,
-  });
+  const AiFloatingButton({super.key, this.bottom = 100, this.right = 20});
 
   final double bottom;
   final double right;
@@ -25,8 +22,13 @@ class AiFloatingButton extends StatelessWidget {
         builder: (context, controller, _) {
           return AnimatedContainer(
             duration: const Duration(milliseconds: 300),
-            width: controller.isExpanded ? 280 : 60,
-            height: controller.isExpanded ? 200 : 60,
+            width: controller.isExpanded
+                ? MediaQuery.of(context).size.width - 32
+                : 60,
+            height: controller.isExpanded
+                ? MediaQuery.of(context).size.height * 0.5
+                : 60,
+            clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(
@@ -50,21 +52,28 @@ class AiFloatingButton extends StatelessWidget {
   }
 
   Widget _buildCollapsedButton(
-      BuildContext context, AiAssistantController controller) {
+    BuildContext context,
+    AiAssistantController controller,
+  ) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: controller.toggleListening,
+        onTap: () {
+          final localeProvider = context.read<LocaleProvider>();
+          controller.toggleListening(
+            languageCode: localeProvider.currentLanguageCode,
+          );
+        },
         borderRadius: BorderRadius.circular(30),
-        child: Center(
-          child: _buildWaveformOrIcon(controller, size: 32),
-        ),
+        child: Center(child: _buildWaveformOrIcon(controller, size: 32)),
       ),
     );
   }
 
   Widget _buildExpandedContent(
-      BuildContext context, AiAssistantController controller) {
+    BuildContext context,
+    AiAssistantController controller,
+  ) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -95,11 +104,7 @@ class AiFloatingButton extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          Expanded(
-            child: SingleChildScrollView(
-              child: _buildTranscriptOrSuggestions(controller),
-            ),
-          ),
+          Expanded(child: _buildChatList(controller)),
           if (controller.errorMessage != null) ...[
             const SizedBox(height: 8),
             Text(
@@ -117,69 +122,145 @@ class AiFloatingButton extends StatelessWidget {
     );
   }
 
-  Widget _buildTranscriptOrSuggestions(
-      AiAssistantController controller) {
-    if (controller.transcript.isNotEmpty) {
-      return Text(
-        controller.transcript,
-        style: AppTextStyles.bodyMedium.copyWith(
-          fontStyle: FontStyle.italic,
-          color: AppColors.textSecondary,
+  Widget _buildChatList(AiAssistantController controller) {
+    if (controller.messages.isEmpty &&
+        controller.transcript.isEmpty &&
+        controller.state != AiAssistantState.processing) {
+      return _buildSuggestions(controller);
+    }
+
+    return ListView.builder(
+      reverse: true,
+      itemCount:
+          controller.messages.length +
+          (controller.transcript.isNotEmpty ? 1 : 0) +
+          (controller.state == AiAssistantState.processing ? 1 : 0),
+      itemBuilder: (context, index) {
+        int i = controller.messages.length - 1 - index;
+
+        // Handle processing indicator at the bottom (index 0 when reversed)
+        if (controller.state == AiAssistantState.processing && index == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _buildBubble(
+                child: const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                isUser: false,
+              ),
+            ),
+          );
+        }
+
+        // Adjust index if processing indicator is present
+        if (controller.state == AiAssistantState.processing) {
+          i++;
+        }
+
+        // Handle current transcript at the bottom
+        if (controller.transcript.isNotEmpty) {
+          if (index ==
+              (controller.state == AiAssistantState.processing ? 1 : 0)) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8.0),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: _buildBubble(
+                  child: Text(
+                    controller.transcript,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontStyle: FontStyle.italic,
+                      color: Colors.white,
+                    ),
+                  ),
+                  isUser: true,
+                ),
+              ),
+            );
+          }
+          i++;
+        }
+
+        if (i < 0 || i >= controller.messages.length)
+          return const SizedBox.shrink();
+
+        final msg = controller.messages[i];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8.0),
+          child: Align(
+            alignment: msg.isUser
+                ? Alignment.centerRight
+                : Alignment.centerLeft,
+            child: _buildBubble(
+              child: Text(
+                msg.text,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: msg.isUser ? Colors.white : AppColors.textPrimary,
+                ),
+              ),
+              isUser: msg.isUser,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBubble({required Widget child, required bool isUser}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: isUser ? AppColors.primary : AppColors.background,
+        borderRadius: BorderRadius.circular(16).copyWith(
+          bottomRight: isUser
+              ? const Radius.circular(0)
+              : const Radius.circular(16),
+          bottomLeft: !isUser
+              ? const Radius.circular(0)
+              : const Radius.circular(16),
         ),
-      );
-    }
+        border: isUser ? null : Border.all(color: AppColors.divider),
+      ),
+      child: child,
+    );
+  }
 
-    if (controller.lastResponse.isNotEmpty) {
-      return Text(
-        controller.lastResponse,
-        style: AppTextStyles.bodySmall,
-      );
-    }
-
-    if (controller.state == AiAssistantState.processing) {
-      return const Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
-
+  Widget _buildSuggestions(AiAssistantController controller) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'Try saying:',
-          style: AppTextStyles.caption.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 6),
-        ...controller.suggestionPrompts.take(4).map(
+        ...controller.suggestionPrompts
+            .take(4)
+            .map(
               (p) => Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text(
-              '• $p',
-              style: AppTextStyles.bodySmall.copyWith(fontSize: 11),
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '• $p',
+                  style: AppTextStyles.bodySmall.copyWith(fontSize: 11),
+                ),
+              ),
             ),
-          ),
-        ),
       ],
     );
   }
 
   Widget _buildWaveformOrIcon(
-      AiAssistantController controller,
-      {required double size}) {
+    AiAssistantController controller, {
+    required double size,
+  }) {
     if (controller.isListening) {
       return _WaveformIndicator(size: size, color: AppColors.primary);
     }
-    return Icon(
-      Icons.mic,
-      size: size,
-      color: AppColors.primary,
-    );
+    return Icon(Icons.mic, size: size, color: AppColors.primary);
   }
 }
 
@@ -224,8 +305,7 @@ class _WaveformIndicatorState extends State<_WaveformIndicator>
           children: List.generate(5, (i) {
             final delay = i * 0.15;
             final value = (_controller.value + delay) % 1.0;
-            final height =
-                4 + 12 * (0.5 + 0.5 * math.sin(value * math.pi * 2));
+            final height = 4 + 12 * (0.5 + 0.5 * math.sin(value * math.pi * 2));
 
             return Container(
               width: 3,

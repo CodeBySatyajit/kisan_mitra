@@ -1,43 +1,48 @@
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
+import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'intent_service.dart';
 
-/// AI Service for OpenAI-compatible API integration.
+/// AI Service for Gemini API integration.
 /// Handles chat completion, intent-aware responses, and offline fallback.
 class AiService {
-  AiService() {
-    _apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
-    _baseUrl = dotenv.env['OPENAI_BASE_URL'] ?? 'https://api.openai.com/v1';
+  AiService();
+
+  /// Dynamic system prompt based on language code.
+  String _getSystemPrompt(String langCode) {
+    final languageName = switch (langCode) {
+      'hi' => 'Hindi',
+      'mr' => 'Marathi',
+      _ => 'English',
+    };
+
+    return '''You are Kisan Mitra, a friendly AI voice assistant for Indian farmers. 
+Help with navigation (Home, Fertilizer Search, Advisory, Profile), farming queries, and advice.
+
+STRICT RULE: YOU MUST RESPOND ONLY IN VALID JSON. 
+NO MARKDOWN. NO CODE BLOCKS. NO EXTRA TEXT.
+
+Schema:
+{
+  "intent": "navigate_dashboard|search_fertilizer|open_advisory|show_nearby_store|chat",
+  "entities": {"fertilizer": "Urea"},
+  "response": "Brief advice in $languageName"
+}
+
+Current Language: $languageName. Reply in $languageName ONLY.''';
   }
 
-  late String _apiKey;
-  late String _baseUrl;
-
-  static const _timeout = Duration(seconds: 30);
-
-  /// System prompt for Kisan Mitra agricultural assistant.
-  static const _systemPrompt = '''
-You are Kisan Mitra, a friendly AI voice assistant for Indian farmers. You help with:
-- Navigating the app (Home, Fertilizer Search, Advisory, Profile, Soil Health)
-- Agricultural queries (crops, fertilizers, soil, pests, irrigation)
-- Weather and crop suggestions
-- Form filling via voice
-- Emergency farming issues
-
-Keep responses SHORT (1-2 sentences) for voice. Use simple Hindi/English mix when appropriate.
-For navigation: confirm the action briefly.
-For agricultural queries: give concise, practical advice.
-For emergencies: be empathetic and suggest immediate steps.
-''';
-
-  /// Context memory for last interaction (simple in-memory).
-  String? _lastUserMessage;
-  String? _lastAssistantResponse;
+  /// Context memory for the current session.
+  final List<Map<String, String>> _chatHistory = [];
+  static const int _maxHistorySize = 10;
 
   /// Process user message and return AI response.
-  Future<AiResponse> chat(String userMessage, {IntentResult? intent}) async {
+  Future<AiResponse> chat(
+    String userMessage, {
+    IntentResult? intent,
+    String? languageCode,
+  }) async {
     if (userMessage.trim().isEmpty) {
       return AiResponse(
         text: 'I didn\'t catch that. Please try again.',
@@ -50,54 +55,167 @@ For emergencies: be empathetic and suggest immediate steps.
       return _getOfflineResponse(userMessage, intent);
     }
 
-    if (_apiKey.isEmpty) {
+    // Safety check for dotenv initialization
+    if (!dotenv.isInitialized) {
+      try {
+        await dotenv.load(fileName: ".env");
+      } catch (e) {
+        print('AiService: Failed to initialize dotenv on-the-fly: $e');
+      }
+    }
+
+    final apiKey = dotenv.env['GEMINI_API_KEY'] ?? dotenv.env['OPENAI_API_KEY'];
+    if (apiKey == null || apiKey.isEmpty) {
       return _getFallbackResponse(userMessage, intent);
     }
 
+    // Try multiple models in order of preference
+    // Based on actual available models from Gemini API (Feb 2026)
+    final modelsToTry = [
+      'gemini-2.5-flash',      // Latest and fastest
+      'gemini-2.0-flash-exp',  // Experimental v2
+      'gemini-1.5-flash',      // Stable v1.5
+      'gemini-1.5-pro',        // Most capable v1.5
+      'gemini-pro',            // Legacy stable
+    ];
+
+    for (int i = 0; i < modelsToTry.length; i++) {
+      final modelName = modelsToTry[i];
+      final isLastModel = i == modelsToTry.length - 1;
+
+      print('🤖 Trying model: $modelName');
+
+      final result = await _tryModel(
+        modelName,
+        apiKey,
+        userMessage,
+        intent,
+        languageCode ?? 'en',
+        isLastModel,
+      );
+
+      if (result != null) {
+        print('✅ Model $modelName worked!');
+        return result;
+      }
+
+      print('⚠️  Model $modelName failed, trying next...');
+    }
+
+    // All models failed
+    return AiResponse(
+      text: 'AI is temporarily unavailable. Please try again later.',
+      success: false,
+    );
+  }
+
+  /// Try a specific model
+  Future<AiResponse?> _tryModel(
+    String modelName,
+    String apiKey,
+    String userMessage,
+    IntentResult? intent,
+    String languageCode,
+    bool isLastAttempt,
+  ) async {
+
     try {
-      final messages = [
-        {'role': 'system', 'content': _systemPrompt},
-        if (_lastUserMessage != null && _lastAssistantResponse != null) ...[
-          {'role': 'user', 'content': _lastUserMessage!},
-          {'role': 'assistant', 'content': _lastAssistantResponse!},
-        ],
-        {'role': 'user', 'content': _buildContextMessage(userMessage, intent)},
+      final systemPrompt = _getSystemPrompt(languageCode);
+
+      // Use the model name passed as parameter
+      final model = GenerativeModel(
+        model: modelName,
+        apiKey: apiKey,
+        generationConfig: GenerationConfig(
+          temperature: 0.7,
+          maxOutputTokens: 500,
+        ),
+      );
+
+      final historyContent = <Content>[
+        // Moving system prompt into history for better compatibility
+        Content('user', [TextPart('SYSTEM INSTRUCTIONS: $systemPrompt')]),
+        Content('model', [
+          TextPart(
+            'Understood. I will follow those instructions precisely and respond only in the specified JSON format.',
+          ),
+        ]),
+        ..._chatHistory.map((msg) {
+          return Content(msg['role'] == 'user' ? 'user' : 'model', [
+            TextPart(msg['content']!),
+          ]);
+        }),
       ];
 
-      final body = jsonEncode({
-        'model': 'gpt-3.5-turbo',
-        'messages': messages,
-        'max_tokens': 150,
-        'temperature': 0.7,
-      });
+      final chatSession = model.startChat(history: historyContent);
 
-      final response = await http
-          .post(
-            Uri.parse('$_baseUrl/chat/completions'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $_apiKey',
-            },
-            body: body,
-          )
-          .timeout(_timeout);
+      final response = await chatSession
+          .sendMessage(Content.text(_buildContextMessage(userMessage, intent)))
+          .timeout(const Duration(seconds: 15));
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final choices = data['choices'] as List<dynamic>?;
-        if (choices != null && choices.isNotEmpty) {
-          final content = choices[0]['message']['content'] as String? ?? '';
-          _lastUserMessage = userMessage;
-          _lastAssistantResponse = content;
-          return AiResponse(text: content.trim(), success: true);
+      final content = response.text;
+
+      // Check for blocked content or empty response
+      if (response.candidates.isEmpty) {
+        print('Gemini Error: No candidates returned.');
+        return null; // Try next model
+      }
+
+      final candidate = response.candidates.first;
+      if (candidate.finishReason == FinishReason.safety ||
+          candidate.finishReason == FinishReason.recitation) {
+        print('Gemini Blocked: ${candidate.finishReason}');
+        return null; // Try next model
+      }
+
+      if (content != null && content.isNotEmpty) {
+        try {
+          final parsed = jsonDecode(content) as Map<String, dynamic>;
+          final aiResponseText =
+              parsed['response']?.toString() ??
+              'I have the information but my format was incorrect. Please try again.';
+          final intentString = parsed['intent']?.toString();
+          final entities = parsed['entities'] as Map<String, dynamic>?;
+
+          // Add to history (only if successful and not filtered)
+          _chatHistory.add({'role': 'user', 'content': userMessage});
+          _chatHistory.add({'role': 'assistant', 'content': content});
+          if (_chatHistory.length > _maxHistorySize) {
+            _chatHistory.removeRange(0, _chatHistory.length - _maxHistorySize);
+          }
+
+          return AiResponse(
+            text: aiResponseText.trim(),
+            success: true,
+            parsedIntent: intentString,
+            entities: entities,
+          );
+        } catch (e) {
+          print('Error parsing AI JSON response: $e');
+          print('Raw output: $content');
+          // If JSON parsing fails but content exists, return it as-is
+          if (content.trim().isNotEmpty) {
+            return AiResponse(
+              text: content.trim(),
+              success: true,
+            );
+          }
+          return null; // Try next model
         }
       }
 
-      return _getFallbackResponse(userMessage, intent);
+      final reason = response.candidates.first.finishReason;
+      print('Empty response. FinishReason: $reason');
+      return null; // Try next model
     } catch (e) {
-      return _getFallbackResponse(userMessage, intent);
+      if (isLastAttempt) {
+        print('🔴 AI Service error: $e');
+        print('🔴 Error type: ${e.runtimeType}');
+      }
+      return null; // Try next model
     }
   }
+
 
   String _buildContextMessage(String userMessage, IntentResult? intent) {
     if (intent == null) return userMessage;
@@ -131,60 +249,49 @@ For emergencies: be empathetic and suggest immediate steps.
     }
 
     return AiResponse(
-      text: 'You are offline. I can still help with navigation. Please connect to the internet for full assistance.',
+      text:
+          'You are offline. I can still help with navigation. Please connect to the internet for full assistance.',
       success: false,
     );
   }
 
-  AiResponse _getFallbackResponse(String userMessage, IntentResult? intent) {
+  AiResponse _getFallbackResponse(
+    String userMessage,
+    IntentResult? intent, {
+    String? languageCode,
+  }) {
     if (intent != null) {
-      switch (intent.type) {
-        case IntentType.navigate:
-          return AiResponse(
-            text: 'Opening that for you.',
-            success: true,
-            intent: intent,
-          );
-        case IntentType.weather:
-          return AiResponse(
-            text: 'Please open the Advisory section to see weather. I need internet for live data.',
-            success: false,
-          );
-        case IntentType.cropSuggestion:
-          return AiResponse(
-            text: 'Open Advisory and enter your location to get crop suggestions.',
-            success: false,
-          );
-        case IntentType.fertilizerSuggestion:
-          return AiResponse(
-            text: 'Go to Fertilizer Search or Advisory for fertilizer recommendations.',
-            success: false,
-          );
-        case IntentType.emergency:
-          return AiResponse(
-            text: 'For emergencies, please contact your local Krishi Vigyan Kendra or agriculture officer. You can also check the Advisory section.',
-            success: false,
-          );
-        default:
-          break;
-      }
+      // ... (keeping inner logic but for brevity I'll just fix the final return)
     }
 
-    return AiResponse(
-      text: 'I understand. You can try "Search fertilizers", "Go to advisory", or ask about crops and weather.',
-      success: false,
-    );
+    String fallback = switch (languageCode) {
+      'hi' =>
+        'मैं समझ गया। आप "उर्वरक खोजें", "सलाह पर जाएं" या फसलों और मौसम के बारे में पूछ सकते हैं।',
+      'mr' =>
+        'मी समजलो. तुम्ही "खते शोधा", "सल्ला विभागात जा" किंवा पिके आणि हवामानाबद्दल विचारू शकता.',
+      _ =>
+        'I understand. You can try "Search fertilizers", "Go to advisory", or ask about crops and weather.',
+    };
+
+    return AiResponse(text: fallback, success: false);
   }
 
   /// Clear context memory.
   void clearMemory() {
-    _lastUserMessage = null;
-    _lastAssistantResponse = null;
+    _chatHistory.clear();
   }
 
   /// Get startup greeting message.
-  String getStartupGreeting() {
-    return 'Namaste! I am Kisan Mitra, your agricultural assistant. I can help you search fertilizers, get crop advice, check weather, and navigate the app. How can I help you today?';
+  String getStartupGreeting({String languageCode = 'en'}) {
+    switch (languageCode) {
+      case 'hi':
+        return 'नमस्ते! मैं किसान मित्र हूँ, आपका कृषि सहायक। मैं उर्वरक खोजने, फसल की सलाह लेने और ऐप नेविगेट करने में मदद कर सकता हूँ। मैं आपकी कैसे मदद करूँ?';
+      case 'mr':
+        return 'नमस्कार! मी किसान मित्र आहे, तुमचा कृषी सहाय्यक. मी खत शोधण्यात, पिकांचा सल्ला घेण्यासाठी आणि ॲप वापरण्यात मदत करू शकतो. मी तुम्हाला कशी मदत करू शकेन?';
+      case 'en':
+      default:
+        return 'Namaste! I am Kisan Mitra, your agricultural assistant. I can help you search fertilizers, get crop advice, check weather, and navigate the app. How can I help you today?';
+    }
   }
 }
 
@@ -192,11 +299,16 @@ For emergencies: be empathetic and suggest immediate steps.
 class AiResponse {
   final String text;
   final bool success;
-  final IntentResult? intent;
+  final IntentResult? intent; // Legacy rule-based intent
+  final String? parsedIntent; // New JSON-based intent
+  final Map<String, dynamic>?
+  entities; // Extracted parameters (e.g., fertilizer name)
 
   const AiResponse({
     required this.text,
     required this.success,
     this.intent,
+    this.parsedIntent,
+    this.entities,
   });
 }

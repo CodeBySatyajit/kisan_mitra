@@ -8,9 +8,12 @@ import 'fertilizer_search_controller.dart';
 import 'fertilizer_search_model.dart';
 import '../../../core/utils/app_theme.dart';
 import 'package:latlong2/latlong.dart' as ll;
+import '../../../l10n/app_localizations.dart';
 
 class FertilizerSearchScreen extends StatefulWidget {
-  const FertilizerSearchScreen({super.key});
+  final Function(int)? onNavigateToTab;
+
+  const FertilizerSearchScreen({super.key, this.onNavigateToTab});
 
   @override
   State<FertilizerSearchScreen> createState() => _FertilizerSearchScreenState();
@@ -604,26 +607,49 @@ class _FertilizerSearchScreenState extends State<FertilizerSearchScreen> {
                       vertical: 12,
                     ),
                     child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const BackButton(color: Colors.black),
+                        GestureDetector(
+                          onTap: () {
+                            if (widget.onNavigateToTab != null) {
+                              widget.onNavigateToTab!(0); // go to Home tab
+                            } else if (Navigator.of(context).canPop()) {
+                              Navigator.of(context).pop();
+                            }
+                          },
+                          child: const Icon(
+                            Icons.arrow_back,
+                            color: Colors.black,
+                          ),
+                        ),
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Fertilizer Search',
-                                style: AppTextStyles.heading3.copyWith(
-                                  fontSize: 18,
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  AppLocalizations.of(context).search,
+                                  style: AppTextStyles.heading3.copyWith(
+                                    fontSize: 18,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                              const Text(
-                                'Find nearby stores for best prices',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
+                                Text(
+                                  AppLocalizations.of(
+                                    context,
+                                  ).findNearbyStoreSubtitle,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -755,9 +781,9 @@ class _FertilizerSearchScreenState extends State<FertilizerSearchScreen> {
                                               ),
                                             ),
                                             if (controller
-                                                    .selectedFertilizer!
-                                                    .manufacturer
-                                                    .isNotEmpty)
+                                                .selectedFertilizer!
+                                                .manufacturer
+                                                .isNotEmpty)
                                               Padding(
                                                 padding: const EdgeInsets.only(
                                                   top: 4,
@@ -784,7 +810,6 @@ class _FertilizerSearchScreenState extends State<FertilizerSearchScreen> {
                                                 fontWeight: FontWeight.w600,
                                               ),
                                             ),
-
                                           ],
                                         ),
                                       ),
@@ -1058,12 +1083,21 @@ class _FertilizerSearchScreenState extends State<FertilizerSearchScreen> {
                                                 children: [
                                                   Row(
                                                     children: [
-                                                      Text(
-                                                        result.store.storeName,
-                                                        style: const TextStyle(
-                                                          fontSize: 15,
-                                                          fontWeight:
-                                                              FontWeight.bold,
+                                                      Flexible(
+                                                        child: Text(
+                                                          result
+                                                              .store
+                                                              .storeName,
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 15,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                              ),
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          maxLines: 1,
                                                         ),
                                                       ),
                                                       if (result
@@ -1241,22 +1275,27 @@ class _FertilizerSearchScreenState extends State<FertilizerSearchScreen> {
                                                   CrossAxisAlignment.end,
                                               children: [
                                                 Text(
-                                                  '₹${result.price.toStringAsFixed(2)}',
-                                                  style: const TextStyle(
+                                                  result.price != null
+                                                      ? '₹${result.price!.toStringAsFixed(2)}'
+                                                      : 'Price N/A',
+                                                  style: TextStyle(
                                                     fontSize: 18,
                                                     fontWeight: FontWeight.bold,
-                                                    color:
-                                                        AppColors.textPrimary,
+                                                    color: result.price != null
+                                                        ? AppColors.textPrimary
+                                                        : AppColors
+                                                              .textSecondary,
                                                   ),
                                                 ),
-                                                const Text(
-                                                  'per unit',
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    color:
-                                                        AppColors.textSecondary,
+                                                if (result.price != null)
+                                                  const Text(
+                                                    'per unit',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      color: AppColors
+                                                          .textSecondary,
+                                                    ),
                                                   ),
-                                                ),
                                                 const SizedBox(height: 8),
                                                 InkWell(
                                                   onTap: () async {

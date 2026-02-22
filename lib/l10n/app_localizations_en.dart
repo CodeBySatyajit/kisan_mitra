@@ -773,6 +773,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nearbyStores => 'Nearby Stores';
 
   @override
+  String get findNearbyStoreSubtitle => 'Find nearby stores for best prices';
+
+  @override
   String get searchFertilizer => 'Search Fertilizer';
 
   @override

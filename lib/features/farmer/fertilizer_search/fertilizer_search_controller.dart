@@ -302,7 +302,8 @@ class FertilizerSearchController extends ChangeNotifier {
     if (_currentPosition == null) {
       await _getCurrentLocation();
       if (_currentPosition == null) {
-        _error = 'Unable to get your location. Please enable location services.';
+        _error =
+            'Unable to get your location. Please enable location services.';
         _stores = [];
         _bestShop = null;
         return;
@@ -353,8 +354,14 @@ class FertilizerSearchController extends ChangeNotifier {
         continue;
       }
 
-      var stockInfo =
-          stockMap[store.id] ?? {'price': 0.0, 'stock': 1, 'isAvailable': true};
+      var stockInfo = stockMap.containsKey(store.id)
+          ? stockMap[store.id]!
+          : (usingFallback
+                ? null
+                : {'price': 0.0, 'stock': 1, 'isAvailable': true});
+
+      if (stockInfo == null && !usingFallback) continue;
+      stockInfo ??= {'price': null, 'stock': 1, 'isAvailable': true};
 
       // Calculate Distance
       double distance = _geoService.calculateDistance(
@@ -374,7 +381,7 @@ class FertilizerSearchController extends ChangeNotifier {
             store: store,
             distance: distance,
             score: 0.0, // Calculated in ranking service
-            price: (stockInfo['price'] as num?)?.toDouble() ?? 0.0,
+            price: (stockInfo['price'] as num?)?.toDouble(),
             inStock: ((stockInfo['stock'] as num?)?.toInt() ?? 1) > 0,
           ),
         );

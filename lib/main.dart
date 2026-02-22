@@ -149,6 +149,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => StoreProfileController()),
         ChangeNotifierProvider(create: (_) => CropController()),
         ChangeNotifierProvider(create: (_) => LanguageService()),
+        ChangeNotifierProvider(create: (_) => AiAssistantController()),
       ],
       child: Consumer<LocaleProvider>(
         builder: (context, locProvider, child) {

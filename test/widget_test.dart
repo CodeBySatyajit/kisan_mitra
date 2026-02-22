@@ -7,12 +7,14 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kisan_mitra/main.dart';
+import 'package:kisan_mitra/core/localization/locale_provider.dart';
 
 void main() {
   testWidgets('App builds without crashing', (WidgetTester tester) async {
-    await tester.pumpWidget(const AppInitializer());
+    final localeProvider = LocaleProvider();
+    await tester.pumpWidget(MyApp(localeProvider: localeProvider));
     await tester.pump();
-    expect(find.byType(AppInitializer), findsOneWidget);
+    expect(find.byType(MyApp), findsOneWidget);
   });
 }
 // Widget tests are skipped: MyApp now requires Firebase initialization

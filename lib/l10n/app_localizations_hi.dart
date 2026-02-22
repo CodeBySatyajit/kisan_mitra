@@ -776,6 +776,10 @@ class AppLocalizationsHi extends AppLocalizations {
   String get nearbyStores => 'नजदीकी दुकानें';
 
   @override
+  String get findNearbyStoreSubtitle =>
+      'सर्वोत्तम कीमत पर नज़दीकी दुकानें खोजें';
+
+  @override
   String get searchFertilizer => 'उर्वरक खोजें';
 
   @override
