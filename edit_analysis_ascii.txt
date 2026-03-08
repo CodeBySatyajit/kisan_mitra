@@ -1,7 +1,0 @@
-Analyzing edit_store_profile_screen.dart...                     
-
-   info - Parameter 'key' could be a super parameter - lib\features\store\profile\edit_store_profile_screen.dart:9:9 - use_super_parameters
-   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\store\profile\edit_store_profile_screen.dart:275:45 - deprecated_member_use
-   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\store\profile\edit_store_profile_screen.dart:316:47 - deprecated_member_use
-   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\store\profile\edit_store_profile_screen.dart:456:46 - deprecated_member_use
-

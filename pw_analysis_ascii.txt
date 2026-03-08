@@ -1,4 +1,0 @@
-Analyzing change_password_screen.dart...                        
-
-   info - Parameter 'key' could be a super parameter - lib\features\store\profile\change_password_screen.dart:7:9 - use_super_parameters
-
